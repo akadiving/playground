@@ -1,0 +1,71 @@
+version: "3.9"
+   
+services:
+  db:
+    container_name: "postgres"
+    image: postgres
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+  web:
+    container_name: "django"
+    build:
+      context: "."
+    command: python manage.py runserver 0.0.0.0:8000
+    environment:
+      POSTGRES_NAME: $POSTGRES_NAME
+      POSTGRES_USER: $POSTGRES_USER
+      POSTGRES_PASSWORD: $POSTGRES_PASSWORD
+    labels:
+      - "traefik.http.routers.django-http.entrypoints=web"
+      - "traefik.http.routers.django-http.rule=Host(`${API_URL}`)"
+    depends_on:
+      traefik:
+        condition: service_started
+      db:
+        condition: service_healthy
+    expose:
+      - "8000"
+    volumes:
+      - ./services/api:/code
+
+  traefik:
+    container_name: "traefik"
+    image: traefik:$TRAEFIK_TAG
+    command:
+      - "--api.insecure=true"
+      - "--api"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--entryPoints.web.address=:80"
+      - "--entryPoints.websecure.address=:443"
+      - "--providers.file.directory=/etc/traefik/dynamic_conf"
+      - "--providers.file.watch=true"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.entrypoints=web"
+      - "traefik.http.routers.traefik.rule=Host(`${TRAEFIK_URL}`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./services/on.traefik/traefik.yml:/etc/traefik/dynamic_conf/conf.yml:ro
+
+  jekyll:
+    image: jekyll/jekyll:$JEKYLL_TAG
+    container_name: "${PROJECT_NAME}.jekyll"
+    command: jekyll serve
+    environment:
+      JEKYLL_ENV: $JEKYLL_ENV
+    labels:
+      - "traefik.http.routers.${PROJECT_NAME}_jekyll-http.entrypoints=web"
+      - "traefik.http.routers.${PROJECT_NAME}_jekyll-http.rule=Host(`${DOCS_URL}`)"
+      - "traefik.http.routers.${PROJECT_NAME}_jekyll-http.middlewares=${PROJECT_NAME}_jekyll-https"
+      - "traefik.http.middlewares.${PROJECT_NAME}_jekyll-https.redirectscheme.scheme=https"
+      - "traefik.http.routers.${PROJECT_NAME}_jekyll.entrypoints=websecure"
+      - "traefik.http.routers.${PROJECT_NAME}_jekyll.rule=Host(`${DOCS_URL}`)"
+      - "traefik.http.routers.${PROJECT_NAME}_jekyll.tls=true"
+    volumes:
+      - $DOCS_DIR:/srv/jekyll

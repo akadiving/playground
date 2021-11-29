@@ -1,0 +1,9 @@
+/certs
+/services/on.traefik/acme.json
+/services/*/appsrc
+/services/on.docs
+/services/on.db
+/services/on.minio
+/services/on.storage/storage
+.env
+.idea
